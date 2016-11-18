@@ -5,6 +5,7 @@ import android.content.ClipData;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Color;
 import android.media.MediaMetadataRetriever;
 import android.net.Uri;
 import android.os.Build;
@@ -44,8 +45,8 @@ import java.util.concurrent.Callable;
 
 class PickerModule extends ReactContextBaseJavaModule implements ActivityEventListener {
 
-    private static final int IMAGE_PICKER_REQUEST = 61110;
-    private static final int CAMERA_PICKER_REQUEST = 61111;
+    private static final int IMAGE_PICKER_REQUEST = 1062228920;
+    private static final int CAMERA_PICKER_REQUEST = 1062228921;
     private static final String E_ACTIVITY_DOES_NOT_EXIST = "E_ACTIVITY_DOES_NOT_EXIST";
 
     private static final String E_PICKER_CANCELLED_KEY = "E_PICKER_CANCELLED";
@@ -65,6 +66,8 @@ class PickerModule extends ReactContextBaseJavaModule implements ActivityEventLi
     private boolean cropping = false;
     private boolean multiple = false;
     private boolean includeBase64 = false;
+    private boolean useFrontCamera;
+    private String cropperTintColor = null;
     private int width = 200;
     private int height = 200;
     private final ReactApplicationContext mReactContext;
@@ -95,6 +98,9 @@ class PickerModule extends ReactContextBaseJavaModule implements ActivityEventLi
         width = options.hasKey("width") ? options.getInt("width") : width;
         height = options.hasKey("height") ? options.getInt("height") : height;
         cropping = options.hasKey("cropping") ? options.getBoolean("cropping") : cropping;
+        cropperTintColor = options.hasKey("cropperTintColor") ? options.getString("cropperTintColor") : cropperTintColor;
+        useFrontCamera = options.hasKey("useFrontCamera") ? options.getBoolean("useFrontCamera") : useFrontCamera;
+
     }
 
     private void deleteRecursive(File fileOrDirectory) {
@@ -251,12 +257,25 @@ class PickerModule extends ReactContextBaseJavaModule implements ActivityEventLi
             }
         });
     }
-
+    private void tryToUseFrontCamera(Intent intent){
+        //Using this strategy to try to open front-facing camera:
+        //http://stackoverflow.com/questions/9686203/how-to-launch-front-camera-with-intent
+        //...may only work on lollipop and above.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            intent.putExtra("android.intent.extras.LENS_FACING_FRONT", 1);
+            intent.putExtra("android.intent.extra.USE_FRONT_CAMERA", true);
+        } else {
+            intent.putExtra("android.intent.extras.CAMERA_FACING", android.hardware.Camera.CameraInfo.CAMERA_FACING_FRONT);
+        }
+    }
     private void initiateCamera(Activity activity) {
 
         try {
             int requestCode = CAMERA_PICKER_REQUEST;
             Intent cameraIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+            if (useFrontCamera) {
+                tryToUseFrontCamera(cameraIntent);
+            }
 
             File imageFile = createImageFile();
 
@@ -443,6 +462,13 @@ class PickerModule extends ReactContextBaseJavaModule implements ActivityEventLi
     private void startCropping(Activity activity, Uri uri) {
         UCrop.Options options = new UCrop.Options();
         options.setCompressionFormat(Bitmap.CompressFormat.JPEG);
+        if (cropperTintColor != null) {
+            int color = Color.parseColor(cropperTintColor);
+            options.setToolbarColor(color);
+            options.setActiveWidgetColor(color);
+            options.setStatusBarColor(color);
+
+        }
 
         UCrop.of(uri, Uri.fromFile(new File(this.getTmpDir(), UUID.randomUUID().toString() + ".jpg")))
                 .withMaxResultSize(width, height)
@@ -526,7 +552,7 @@ class PickerModule extends ReactContextBaseJavaModule implements ActivityEventLi
             }
         }
     }
-    
+
     private void croppingResult(Activity activity, final int requestCode, final int resultCode, final Intent data) {
         if (mPickerPromise == null) {
             return;
